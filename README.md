@@ -1,96 +1,95 @@
-# ternary-arena: Multi-agent competition arena for {-1, 0, +1} systems
+# ternary-arena
 
-## Why This Exists
+**Multi-agent competition arena for balanced ternary systems**
 
-When you want intelligences to compete — a card game, a D&D battle, a debate scoring system — you need a structured arena where agents with ternary strategies face off under defined rules, and you can track who wins over time. This crate provides the competition layer: match execution, tournament brackets, scoreboards, and spectator observation. The "card game layer" Casey described where intelligences compete for wits.
+[![ternary](https://img.shields.io/badge/ecosystem-ternary-blue)](https://github.com/orgs/SuperInstance/repositories?q=ternary)
+[![tests](https://img.shields.io/badge/tests-20-green)]()
 
-## Core Concepts
+## Overview
 
-**Balanced ternary**: Three values: -1 (Neg), 0 (Zero), +1 (Pos). The domain of agent moves.
+Multi-agent competition arena for balanced ternary systems.
 
-**Agent**: A competitor with a name and a strategy (repeating sequence of Trits). At each round, the agent plays the next Trit in its strategy, wrapping around.
+Provides an Arena where agents (represented by ternary strategies) compete in
+Matches, organized into Tournaments. A ScoreBoard tracks results, ArenaRules
+define the ternary rule system, and ArenaSpectators can observe and learn
+from completed matches.
 
-**ArenaRules**: Defines how pairs of moves resolve into points. Default is rock-paper-scissors-style: Pos beats Neg, Neg beats Zero, Zero beats Pos. Draws score 1 point each. Fully configurable.
+## Architecture
 
-**Match**: Two agents compete over a fixed number of rounds. Each round produces a RoundResult with moves and points. After all rounds, a winner is determined (or it's a draw).
+- **`Agent`** — core data structure
+- **`ArenaRules`** — core data structure
+- **`RoundResult`** — core data structure
+- **`Match`** — core data structure
+- **`ScoreBoard`** — core data structure
+- **`Tournament`** — core data structure
+- **`ArenaSpectator`** — core data structure
+- **`MatchObservation`** — core data structure
+- **`Arena`** — core data structure
+- **`Trit`** — state enumeration
 
-**Tournament**: A single-elimination bracket. Agents are paired, matches are played, winners advance. Odd agents get byes.
+### Key Functions
 
-**ScoreBoard**: Accumulates points, wins, losses, and draws across multiple matches. Produces a leaderboard sorted by total points.
+- `value()`
+- `from_i8()`
+- `new()`
+- `move_at()`
+- `strategy_len()`
+- `new()`
+- `resolve()`
+- `flat()`
+- `new()`
+- `play()`
+- ... and 22 more
 
-**ArenaSpectator**: Observes completed matches without participating. Records observations and can compute win rates for specific agents across all observed matches.
+## Why Ternary?
 
-**Arena**: The top-level environment that combines rules, scoreboard, and spectator. Run matches and tournaments through it.
+The balanced ternary system {-1, 0, +1} (also known as Z₃) is the mathematically optimal discrete encoding:
+- **More expressive than binary**: three states capture positive, neutral, and negative
+- **Natural for decisions**: accept/reject/abstain, buy/hold/sell, agree/disagree/neutral
+- **Self-balancing**: the 0 state acts as a universal screen, preventing pathological lock-in
+- **Z₃ cyclic dynamics**: rock-paper-scissors is the only natural coordination mechanism
 
-## Quick Start
+## Stats
+
+| Metric | Value |
+|--------|-------|
+| Lines of Rust | 656 |
+| Test count | 20 |
+| Public types | 10 |
+| Public functions | 32 |
+
+## Ecosystem
+
+This crate is part of the **[SuperInstance Ternary Fleet](https://github.com/orgs/SuperInstance/repositories?q=ternary)**:
+
+- **[ternary-core](https://github.com/SuperInstance/ternary-core)** — shared traits and Z₃ arithmetic
+- **[ternary-grid](https://github.com/SuperInstance/ternary-grid)** — spatial grid with {-1, 0, +1} cells
+- **[ternary-graph](https://github.com/SuperInstance/ternary-graph)** — ternary-weighted graph algorithms
+- **[ternary-automata](https://github.com/SuperInstance/ternary-automata)** — three-state cellular automata
+- **[ternary-compiler](https://github.com/SuperInstance/ternary-compiler)** — expression compiler and optimizer
+
+200+ crates. 4,300+ tests. One pattern.
+
+## Research Context
+
+The ternary approach connects to several active research areas:
+- **Ternary Neural Networks** (TNNs): weights constrained to {-1, 0, +1} for efficient inference
+- **Huawei's ternary chip**: 7nm ternary silicon with 60% less power consumption
+- **Active inference**: free energy minimization naturally maps to ternary action selection
+- **Cyclic dominance**: RPS dynamics maintain biodiversity in spatial ecology
+- **Z₃ group theory**: the only algebraic group on three elements is cyclic addition mod 3
+
+## Usage
 
 ```toml
 [dependencies]
-ternary-arena = "0.1"
+ternary-arena = "0.1.0"
 ```
 
 ```rust
-use ternary_arena::*;
-
-let a = Agent::new(1, "aggressive", vec![Trit::Pos, Trit::Pos, Trit::Neg]);
-let b = Agent::new(2, "balanced", vec![Trit::Zero, Trit::Pos, Trit::Neg]);
-
-let mut arena = Arena::new("colosseum");
-let m = arena.play_match(Match::new(a, b, 3));
-println!("Winner: {:?}", m.winner());
-println!("Leaderboard: {:?}", arena.scoreboard.leaderboard());
+use ternary_arena;
 ```
-
-## API Overview
-
-| Type | Description |
-|------|-------------|
-| `Trit` | Balanced ternary value: Neg, Zero, or Pos |
-| `Agent` | A competitor with ID, name, and move strategy |
-| `ArenaRules` | Resolves pairs of moves into points |
-| `Match` | A contest between two agents over N rounds |
-| `RoundResult` | One round's moves and points |
-| `Tournament` | Single-elimination bracket across multiple agents |
-| `ScoreBoard` | Tracks points, wins, losses, draws across matches |
-| `ArenaSpectator` | Observes matches and computes analytics |
-| `Arena` | Top-level environment combining rules, scoring, observation |
-
-## How It Works
-
-Matches are played synchronously: each round, both agents produce their move (from their strategy at the current round index), and the ArenaRules resolve the pair into points. Results accumulate in a Vec of RoundResults.
-
-Tournaments use a simple bracket: agents are paired sequentially (indices 0+1, 2+3, etc.), matches are played, winners advance. If there's an odd number of agents, the last one gets a bye. This repeats until one champion remains. Draws in a match are resolved by advancing the first-listed agent as a tiebreak.
-
-The ScoreBoard uses HashMaps keyed by agent ID, so it works across multiple matches and tournaments. The Spectator stores MatchObservations (who played, who won, total points) and computes win rates on demand.
-
-## Known Limitations
-
-- Tournament brackets are fixed sequential pairing. No seeding, no Swiss-style, no double elimination.
-- Draw tiebreak always favors the first-listed agent (agent_a). Not configurable.
-- Agents with empty strategies always play Zero. No way to signal "no move."
-- No time limits or round limits on matches — all rounds play to completion.
-- ArenaSpectator stores all observations in memory with no limit.
-- No team-based or N-player matches. Only 1v1.
-
-## Use Cases
-
-- **Strategy comparison**: Pit different ternary strategies against each other and see which wins under various rule sets.
-- **Tournament simulation**: Run elimination brackets with many agents to find dominant strategies.
-- **Learning from observation**: Use ArenaSpectator to track which strategies perform best and feed that into strategy optimization.
-- **Game balance testing**: Define custom ArenaRules and test whether they produce balanced outcomes.
-
-## Ecosystem Context
-
-Part of the SuperInstance ternary ecosystem. Could use `ternary-dice` to generate stochastic strategies, `ternary-agent` for more sophisticated agent implementations, and `ternary-scoring` for alternative scoring algorithms. The competition layer for `ternary-game-theory` and `ternary-evolution-advanced`.
 
 ## License
 
 MIT
-
-## See Also
-- **ternary-adversarial** — related
-- **ternary-games** — related
-- **ternary-game-theory** — related
-- **ternary-scoring** — related
-- **ternary-fitness** — related
-
