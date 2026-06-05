@@ -86,3 +86,11 @@ Part of the SuperInstance ternary ecosystem. Could use `ternary-dice` to generat
 ## License
 
 MIT
+
+## See Also
+- **ternary-adversarial** — related
+- **ternary-games** — related
+- **ternary-game-theory** — related
+- **ternary-scoring** — related
+- **ternary-fitness** — related
+
