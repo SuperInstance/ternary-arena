@@ -107,6 +107,34 @@ Ternary Arena provides the evaluation framework for ternary strategies in SuperI
 
 See [ARCHITECTURE.md](https://github.com/SuperInstance/SuperInstance/blob/main/ARCHITECTURE.md) for game-theoretic architecture.
 
+
+### Non-Transitive Dominance
+
+The default rules create a dominance cycle:
+
+```
+Pos > Neg > Zero > Pos > ...
+```
+
+No dominant strategy exists — this is a mixed-strategy Nash equilibrium. Optimal play is uniform random (1/3 each), yielding expected score 0 for both players. Any deterministic strategy can be exploited by an opponent who detects the pattern.
+
+### Tournament Formats
+
+**Round-robin**: Every pair plays both directions. Total matches: N(N-1). Cost: **O(N² × R)** for R rounds per match.
+
+**Double elimination**: Bracket with losers bracket. Total matches: 2N - 1 (or 2N - 2). Cost: **O(N × R)**.
+
+### Spectator Integration
+
+```rust
+trait ArenaSpectator {
+    fn on_match_complete(&mut self, result: &MatchResult);
+    fn on_tournament_complete(&mut self, standings: &ScoreBoard);
+}
+```
+
+Spectators receive every match result — enabling ML training loops (reinforcement learning from arena outcomes), statistical analysis (Elo rating computation), or real-time visualization.
+
 ## References
 
 1. von Neumann, J. & Morgenstern, O. (1944). *Theory of Games and Economic Behavior*. Princeton University Press.
