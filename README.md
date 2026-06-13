@@ -1,145 +1,128 @@
-# Ternary Arena
+# ternary-arena
 
-**Ternary Arena** is a multi-agent competition framework for balanced ternary systems — providing matches, tournaments, scoreboards, rule systems, and spectator abstractions for pitting ternary strategies against each other.
+**Multi-agent competition arena for balanced ternary systems.**
+
+`ternary-arena` provides a structured environment where agents carrying ternary strategies (sequences of trit moves from $\{-1, 0, +1\}$) compete in matches governed by ternary game-theoretic rules. It supports single matches, elimination tournaments, scoreboard tracking, and spectator-based observation for analysis.
 
 ## Why It Matters
 
-Game-theoretic evaluation requires controlled environments where strategies compete under defined rules. Ternary Arena provides this with a ternary twist: instead of binary (win/lose), outcomes use {-1 (loss), 0 (draw), +1 (win)}, enabling richer evaluation including the "abstain" option. The rock-paper-scissors dynamic (Pos beats Neg, Neg beats Zero, Zero beats Pos) creates non-transitive dominance cycles that prevent any single strategy from dominating — promoting diversity.
+Multi-agent reinforcement learning and evolutionary game theory require controlled environments where strategies can be evaluated against each other under well-defined rules. In ternary systems — where every action is one of three choices — the game space is rich enough to exhibit non-trivial dynamics (rock-paper-scissors-style cycles) yet small enough for exhaustive analysis.
+
+This crate provides that environment. Each agent plays a strategy vector $\mathbf{s} \in \{-1, 0, +1\}^n$, and outcomes are determined by a payoff matrix. The arena supports tournament brackets, leaderboard ranking, and spectator analytics including win-rate computation.
 
 ## How It Works
 
-### Match Mechanics
+### Ternary Game Rules
 
-Two agents face off over R rounds. Each round, both play a `Trit` move from their strategy:
+The default rule system is a cyclic dominance game on $\{-1, 0, +1\}$, analogous to rock-paper-scissors:
 
-```
-agent.move_at(round) → strategy[round % strategy_len]
-```
+$$\text{Pos}(+1) \succ \text{Neg}(-1) \succ \text{Zero}(0) \succ \text{Pos}(+1)$$
 
-Move resolution via `ArenaRules` payoff matrix (default: rock-paper-scissors):
+The payoff matrix $M$ assigns points for each $(a, b)$ pair:
 
-```
-(Pos, Neg) → +3 for Pos  (Pos beats Neg)
-(Neg, Zero) → +3 for Neg  (Neg beats Zero)
-(Zero, Pos) → +3 for Zero (Zero beats Pos)
-(X, X) → +1 each          (draw)
-otherwise → 0             (loss)
-```
+$$M(a, b) = \begin{cases} 3 & \text{if } a \text{ dominates } b \\ 1 & \text{if } a = b \text{ (draw)} \\ 0 & \text{if } b \text{ dominates } a \end{cases}$$
 
-Scoring per round: **O(1)** (HashMap lookup). Match of R rounds: **O(R)**.
+Each round resolves to $(M(a,b),\; M(b,a))$, ensuring a **zero-sum-like** structure where dominance yields 3 points for the winner and 0 for the loser.
+
+### Match Resolution
+
+A match consists of $r$ rounds. In each round $t$, agent $A$ plays move $a_t = s_A[t \bmod |s_A|]$ and agent $B$ plays $b_t = s_B[t \bmod |s_B|]$. Strategies wrap cyclically, enabling arbitrarily long matches from finite strategy vectors.
+
+**Total score:**
+
+$$\text{Score}_A = \sum_{t=0}^{r-1} M(a_t, b_t), \qquad \text{Score}_B = \sum_{t=0}^{r-1} M(b_t, a_t)$$
+
+**Complexity:** $O(r)$ for $r$ rounds. Each round involves two modular lookups ($O(1)$) and one payoff table lookup ($O(1)$).
 
 ### Tournament Structure
 
-A tournament runs all-vs-all round-robin:
+Tournaments use single-elimination brackets. For $n$ agents:
 
-```
-for i in 0..N:
-    for j in 0..N:
-        if i != j:
-            play_match(agents[i], agents[j])
-```
+$$\text{matches} = n - 1 \quad \text{(for power-of-two } n\text{)}$$
 
-Total matches: N·(N-1). Cost: **O(N² · R)** for N agents, R rounds per match.
+When $n$ is odd, the last unpaired agent receives a **bye** (auto-advances). Draws are resolved by tiebreak: the first-listed agent advances.
 
-### ScoreBoard
+**Complexity:** $O(n)$ matches total, $O(\log_2 n)$ rounds for power-of-two brackets.
 
-Tracks cumulative scores:
+### Scoreboard and Leaderboard
 
-```
-ScoreBoard {
-    scores: HashMap<agent_id, i32>,
-    wins, losses, draws per agent
-}
-```
+The scoreboard accumulates scores, wins, losses, and draws across multiple matches. The leaderboard sorts agents by cumulative score:
 
-Update per match: **O(1)**. Ranking: **O(N log N)** (sort by score).
+$$\text{rank}(i) < \text{rank}(j) \iff \text{Score}_i > \text{Score}_j$$
 
-### Spectator Pattern
+**Complexity:** $O(1)$ per match recorded, $O(n \log n)$ for leaderboard sorting.
 
-`ArenaSpectator` trait for observers:
+### Spectator Analytics
 
-```rust
-trait ArenaSpectator {
-    fn on_match_complete(&mut self, result: &MatchResult);
-    fn on_tournament_complete(&mut self, standings: &ScoreBoard);
-}
-```
+Spectators observe matches and compute **win rates**:
 
-Enables ML training loops, statistical analysis, or real-time visualization.
+$$W_i = \frac{|\{m : \text{winner}(m) = i\}|}{|\{m : i \in m\}|}$$
 
-### Non-Transitive Dominance
+where the denominator counts matches in which agent $i$ participated. Win rate is undefined ($0.0$) for agents with no observed matches.
 
-The default rules create a dominance cycle:
+### Nash Equilibrium Note
 
-```
-Pos > Neg > Zero > Pos > ...
-```
-
-No dominant strategy exists — this is a mixed-strategy Nash equilibrium. Optimal play is random (1/3 each), yielding expected score 0 for both players.
+In the default cyclic game, no pure strategy is a Nash equilibrium. The mixed-strategy Nash equilibrium is the uniform distribution $U\{-1, 0, +1\}$, where each action is played with probability $\frac{1}{3}$. Agents with non-uniform strategies are exploitable.
 
 ## Quick Start
 
+```toml
+[dependencies]
+ternary-arena = "0.1"
+```
+
 ```rust
-use ternary_arena::*;
+use ternary_arena::{Agent, Arena, ArenaRules, Match, Tournament, Trit};
 
-let alpha = Agent::new(1, "Alpha", vec![Trit::Pos, Trit::Neg, Trit::Zero]);
-let beta = Agent::new(2, "Beta", vec![Trit::Zero, Trit::Pos, Trit::Neg]);
+// Create agents with strategies
+let agent_a = Agent::new(1, "aggressive", vec![Trit::Pos, Trit::Pos, Trit::Neg]);
+let agent_b = Agent::new(2, "defensive", vec![Trit::Zero, Trit::Neg, Trit::Zero]);
 
-let rules = ArenaRules::new();
-let result = rules.play_match(&alpha, &beta, 10);
-println!("Alpha: {}, Beta: {}", result.score_a, result.score_b);
+// Run a single match
+let mut arena = Arena::new("colosseum");
+let m = arena.play_match(Match::new(agent_a, agent_b, 10));
+assert!(m.finished);
+
+// Run a tournament
+let agents = vec![
+    Agent::new(1, "a", vec![Trit::Pos]),
+    Agent::new(2, "b", vec![Trit::Neg]),
+    Agent::new(3, "c", vec![Trit::Zero]),
+    Agent::new(4, "d", vec![Trit::Pos, Trit::Zero]),
+];
+let champion = arena.play_tournament(Tournament::new("cup", agents, 5));
+println!("Champion: {:?}", champion);
+
+// Check standings
+let board = arena.scoreboard.leaderboard();
+println!("Leaderboard: {:?}", board);
 ```
 
 ## API
 
-| Type | Description |
-|------|-------------|
-| `Agent` | id, name, strategy (Vec<Trit>) |
-| `ArenaRules` | Payoff matrix and match resolution |
-| `MatchResult` | Scores, move history, winner |
-| `Tournament` | Round-robin or elimination structure |
-| `ScoreBoard` | Cumulative scores with W/L/D |
-| `ArenaSpectator` | Observer trait for ML/analysis |
+| Type | Purpose | Key Methods |
+|------|---------|-------------|
+| `Trit` | The $\{-1, 0, +1\}$ value type | `value()`, `from_i8()` |
+| `Agent` | Strategy-carrying competitor | `new()`, `move_at()`, `strategy_len()` |
+| `ArenaRules` | Payoff matrix and resolution | `resolve()`, `flat()` |
+| `Match` | Two-agent game over $r$ rounds | `play()`, `winner()`, `total_points()` |
+| `ScoreBoard` | Cumulative scoring | `record()`, `score()`, `wins()`, `leaderboard()` |
+| `Tournament` | Single-elimination bracket | `run()`, `match_count()` |
+| `ArenaSpectator` | Match observer with analytics | `observe()`, `win_rate()` |
+| `Arena` | Top-level competition environment | `play_match()`, `play_tournament()` |
 
 ## Architecture Notes
 
-Ternary Arena provides the evaluation framework for ternary strategies in SuperInstance. In γ + η = C, the arena measures both γ (growth — winning strategies accumulate positive scores) and η (avoidance — losing strategies accumulate negative scores, driving selection pressure). Integrates with `ternary-benchmark` for performance measurement and `strategy-ecology` for population dynamics.
+The arena operates within the SuperInstance conservation law **γ + η = C**. Each match converts strategic energy ($\gamma$) into outcome entropy ($\eta$): a decisive result concentrates information (low $\eta$), while a draw maximizes entropy ($\eta \to C$) since no resolution occurs. The cyclic dominance structure ensures that no single strategy dominates indefinitely — the system oscillates around the Nash equilibrium, maintaining the conservation bound.
 
-See [ARCHITECTURE.md](https://github.com/SuperInstance/SuperInstance/blob/main/ARCHITECTURE.md) for game-theoretic architecture.
-
-
-### Non-Transitive Dominance
-
-The default rules create a dominance cycle:
-
-```
-Pos > Neg > Zero > Pos > ...
-```
-
-No dominant strategy exists — this is a mixed-strategy Nash equilibrium. Optimal play is uniform random (1/3 each), yielding expected score 0 for both players. Any deterministic strategy can be exploited by an opponent who detects the pattern.
-
-### Tournament Formats
-
-**Round-robin**: Every pair plays both directions. Total matches: N(N-1). Cost: **O(N² × R)** for R rounds per match.
-
-**Double elimination**: Bracket with losers bracket. Total matches: 2N - 1 (or 2N - 2). Cost: **O(N × R)**.
-
-### Spectator Integration
-
-```rust
-trait ArenaSpectator {
-    fn on_match_complete(&mut self, result: &MatchResult);
-    fn on_tournament_complete(&mut self, standings: &ScoreBoard);
-}
-```
-
-Spectators receive every match result — enabling ML training loops (reinforcement learning from arena outcomes), statistical analysis (Elo rating computation), or real-time visualization.
+Tournament brackets progressively concentrate $\gamma$ into the champion, representing the maximum-likelihood best strategy. The elimination process is an information funnel: $n$ agents enter with $n$ strategies, but only one emerges, having accumulated the $\gamma$ of defeated opponents.
 
 ## References
 
-1. von Neumann, J. & Morgenstern, O. (1944). *Theory of Games and Economic Behavior*. Princeton University Press.
-2. Nash, J. (1951). "Non-Cooperative Games." *Annals of Mathematics*, 54(2), 286–295.
-3. Axelrod, R. (1984). *The Evolution of Cooperation*. Basic Books.
+- Nash, J. *Equilibrium Points in n-Person Games.* PNAS 1950. — Nash equilibrium in multi-agent games.
+- von Neumann, J. & Morgenstern, O. *Theory of Games and Economic Behavior.* Princeton, 1944. — Zero-sum game theory.
+- Wolfram, S. *A New Kind of Science.* Wolfram Media, 2002. — Cyclic cellular automata and competitive systems.
+- Axelrod, R. *The Evolution of Cooperation.* Basic Books, 1984. — Tournament-style strategy evaluation.
 
 ## License
 
